@@ -7,10 +7,53 @@ jobs:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
+    
+    - name: Install Npcap SDK
+      run: |
+        # Download and install Npcap SDK
+        $url = "https://npcap.com/dist/npcap-sdk-1.13.zip"
+        $output = "npcap-sdk.zip"
+        
+        for ($i = 1; $i -le 3; $i++) {
+          try {
+            Invoke-WebRequest -Uri $url -OutFile $output -TimeoutSec 30
+            break
+          } catch {
+            if ($i -eq 3) { throw }
+            Start-Sleep 5
+          }
+        }
+        
+        Expand-Archive -Path $output -DestinationPath "npcap-sdk" -Force
+        
+        $vcToolsPath = (Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\" | Sort-Object Name -Descending | Select-Object -First 1).FullName
+        $libPath = "$vcToolsPath\lib\x64"
+        
+        if (Test-Path "npcap-sdk\Lib\x64") {
+          Copy-Item "npcap-sdk\Lib\x64\wpcap.lib" $libPath -Force -ErrorAction SilentlyContinue
+          Copy-Item "npcap-sdk\Lib\x64\Packet.lib" $libPath -Force -ErrorAction SilentlyContinue
+        }
+        
+        $altPaths = @(
+          "C:\Program Files (x86)\Windows Kits\10\Lib\*\um\x64",
+          "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\*\lib\x64"
+        )
+        
+        foreach ($path in $altPaths) {
+          $resolvedPaths = Get-ChildItem $path -ErrorAction SilentlyContinue
+          foreach ($resolvedPath in $resolvedPaths) {
+            if (Test-Path $resolvedPath) {
+              Copy-Item "npcap-sdk\Lib\x64\*.lib" $resolvedPath -Force -ErrorAction SilentlyContinue
+            }
+          }
+        }
+      shell: powershell
+    
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
         targets: x86_64-pc-windows-msvc
+        
     - name: Cache cargo dependencies
       uses: actions/cache@v4
       with:
@@ -19,11 +62,15 @@ jobs:
           ~/.cargo/git
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        
     - name: Build
       run: cargo build --target x86_64-pc-windows-msvc --release
+      env:
+        # Additional environment variables to help find the libraries
+        RUSTFLAGS: "-L C:/npcap-sdk/Lib/x64"
+        
     - name: Upload executable
       uses: actions/upload-artifact@v4
       with:
         name: windows-executable
         path: target/x86_64-pc-windows-msvc/release/*.exe
-
