@@ -265,7 +265,7 @@ fn parse_ip_packet(data: &[u8]) {
     }
 
     let version = (data[0] >> 4) & 0x0F;
-    let header_length = (data[0] & 0x0F);
+    let header_length = data[0] & 0x0F;
     let protocol = data[9];
     let src_ip = format!("{}.{}.{}.{}", data[12], data[13], data[14], data[15]);
     let dst_ip = format!("{}.{}.{}.{}", data[16], data[17], data[18], data[19]);
