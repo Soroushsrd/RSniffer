@@ -97,23 +97,23 @@ impl TryFrom<&[u8]> for EtherType {
 //
 #[derive(Debug)]
 pub enum Protocol {
-    ICMP = 1, // Internet control msg protocol (ping, errors)
-    TCP = 6,  // Transmission control protocol
-    UDP = 17, // User Datagram protocol
-    IGMP = 2, // Internet Group management
-    ESP = 50, // Generic routing encapsulation
-    OTHER,    // Encrypted security payload
+    Icmp = 1, // Internet control msg protocol (ping, errors)
+    Tcp = 6,  // Transmission control protocol
+    Udp = 17, // User Datagram protocol
+    Igmp = 2, // Internet Group management
+    Esp = 50, // Generic routing encapsulation
+    Other,    // Encrypted security payload
 }
 
 impl From<u8> for Protocol {
     fn from(value: u8) -> Self {
         match value {
-            1 => Self::ICMP,
-            6 => Self::TCP,
-            17 => Self::UDP,
-            2 => Self::IGMP,
-            50 => Self::ESP,
-            _ => Self::OTHER,
+            1 => Self::Icmp,
+            6 => Self::Tcp,
+            17 => Self::Udp,
+            2 => Self::Igmp,
+            50 => Self::Esp,
+            _ => Self::Other,
         }
     }
 }
@@ -183,17 +183,17 @@ impl From<u8> for Protocol {
 pub enum KnownPorts {
     FTPData = 20,
     FTPControl = 21,
-    SSH = 22,
+    Ssh = 22,
     Telnet = 23,
-    SMTP = 25,
-    DNS = 53,
+    Smtp = 25,
+    Dns = 53,
     DHCPServer = 67,
     DHCPClient = 68,
-    HTTP = 80,
+    Http = 80,
     POP3 = 110,
-    IMAP = 143,
-    HTTPS = 443,
-    IMAPS = 993,
+    Imap = 143,
+    Https = 443,
+    Imaps = 993,
     POP3S = 995,
     Unknown,
 }
@@ -203,17 +203,17 @@ impl From<u16> for KnownPorts {
         match value {
             20 => Self::FTPData,
             21 => Self::FTPControl,
-            22 => Self::SSH,
+            22 => Self::Ssh,
             23 => Self::Telnet,
-            25 => Self::SMTP,
-            53 => Self::DNS,
+            25 => Self::Smtp,
+            53 => Self::Dns,
             67 => Self::DHCPServer,
             68 => Self::DHCPClient,
-            80 => Self::HTTP,
+            80 => Self::Http,
             110 => Self::POP3,
-            143 => Self::IMAP,
-            443 => Self::HTTPS,
-            993 => Self::IMAPS,
+            143 => Self::Imap,
+            443 => Self::Https,
+            993 => Self::Imaps,
             995 => Self::POP3S,
             _ => Self::Unknown,
         }
@@ -249,7 +249,7 @@ pub fn parse_and_display_packet(packet_num: usize, packet: &pcap::Packet) {
     println!("   Source MAC:      {}", format_mac(&eth_header.src_mac));
     println!(
         "   EtherType:       ({:?})",
-        EtherType::from(eth_header.ether_type.clone())
+        eth_header.ether_type.clone()
     );
 
     // Check if it's an IP packet

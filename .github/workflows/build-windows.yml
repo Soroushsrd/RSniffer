@@ -74,3 +74,26 @@ jobs:
       with:
         name: windows-executable
         path: target/x86_64-pc-windows-msvc/release/*.exe
+
+    - name: Create GitHub Release
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          target/x86_64-pc-windows-msvc/release/RSniffer.exe
+        body: |
+          ## RSniffer ${{ github.ref_name }}
+          
+          Network packet sniffer built with Rust.
+          
+          ### Installation
+          1. Download the executable below
+          2. Install [Npcap](https://npcap.com/) on your Windows system
+          3. Run RSniffer.exe as Administrator
+          
+          ### Changes
+          - Built from commit ${{ github.sha }}
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
