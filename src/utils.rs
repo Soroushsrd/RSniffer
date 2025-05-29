@@ -38,6 +38,8 @@
 // Payload (46-1500 bytes): The actual data (IP packet, ARP, etc.)
 // FCS (4 bytes): Frame Check Sequence (error detection) - usually stripped by NIC
 
+use std::fmt;
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum EtherType {
     Ipv4 = 0x0800,
@@ -180,24 +182,72 @@ impl From<u8> for Protocol {
 // └─────────────────────────────────┴─────────────────────────────────┘
 
 #[derive(Debug)]
+#[repr(u16)]
 pub enum KnownPorts {
     FTPData = 20,
     FTPControl = 21,
     Ssh = 22,
     Telnet = 23,
     Smtp = 25,
+    Whois = 43,
     Dns = 53,
+    Covia = 64,
     DHCPServer = 67,
     DHCPClient = 68,
     Http = 80,
     POP3 = 110,
+    Ntp = 123,
     Imap = 143,
     Https = 443,
+    Ldap = 389,
+    Syslog = 514,
+    Ldaps = 636,
     Imaps = 993,
     POP3S = 995,
-    Unknown,
+    Mssql = 1433,
+    Oracle = 1521,
+    Docker = 2376,
+    Mysql = 3306,
+    Rdp = 3389,
+    Postgresql = 5432,
+    Git = 9418,
+    Unknown(u16),
 }
 
+impl fmt::Display for KnownPorts {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            KnownPorts::FTPData => write!(f, "FTP Data (20)"),
+            KnownPorts::FTPControl => write!(f, "FTP Control (21)"),
+            KnownPorts::Ssh => write!(f, "SSH (22)"),
+            KnownPorts::Telnet => write!(f, "Telnet (23)"),
+            KnownPorts::Smtp => write!(f, "SMTP (25)"),
+            KnownPorts::Whois => write!(f, "WHOIS (43)"),
+            KnownPorts::Dns => write!(f, "DNS (53)"),
+            KnownPorts::Covia => write!(f, "Covia (64)"),
+            KnownPorts::DHCPServer => write!(f, "DHCP Server (67)"),
+            KnownPorts::DHCPClient => write!(f, "DHCP Client (68)"),
+            KnownPorts::Http => write!(f, "HTTP (80)"),
+            KnownPorts::POP3 => write!(f, "POP3 (110)"),
+            KnownPorts::Ntp => write!(f, "NTP (123)"),
+            KnownPorts::Imap => write!(f, "IMAP (143)"),
+            KnownPorts::Https => write!(f, "HTTPS (443)"),
+            KnownPorts::Ldap => write!(f, "LDAP (389)"),
+            KnownPorts::Syslog => write!(f, "SysLog (514)"),
+            KnownPorts::Ldaps => write!(f, "LDAPS (636)"),
+            KnownPorts::Imaps => write!(f, "IMAPS (993)"),
+            KnownPorts::POP3S => write!(f, "POP3S (995)"),
+            KnownPorts::Mssql => write!(f, "MsSql (1433)"),
+            KnownPorts::Oracle => write!(f, "Oracle (1521)"),
+            KnownPorts::Docker => write!(f, "Docker (2376)"),
+            KnownPorts::Mysql => write!(f, "MySql (3306)"),
+            KnownPorts::Rdp => write!(f, "RDP (3389)"),
+            KnownPorts::Postgresql => write!(f, "PostgreSql (5432)"),
+            KnownPorts::Git => write!(f, "Git (9418)"),
+            KnownPorts::Unknown(port) => write!(f, "Unknown ({})", port),
+        }
+    }
+}
 impl From<u16> for KnownPorts {
     fn from(value: u16) -> Self {
         match value {
@@ -206,16 +256,29 @@ impl From<u16> for KnownPorts {
             22 => Self::Ssh,
             23 => Self::Telnet,
             25 => Self::Smtp,
+            43 => Self::Whois,
             53 => Self::Dns,
+            64 => Self::Covia,
             67 => Self::DHCPServer,
             68 => Self::DHCPClient,
             80 => Self::Http,
             110 => Self::POP3,
+            123 => Self::Ntp,
             143 => Self::Imap,
             443 => Self::Https,
+            389 => Self::Ldap,
+            514 => Self::Syslog,
+            636 => Self::Ldaps,
             993 => Self::Imaps,
             995 => Self::POP3S,
-            _ => Self::Unknown,
+            1433 => Self::Mssql,
+            1521 => Self::Oracle,
+            2376 => Self::Docker,
+            3306 => Self::Mysql,
+            3389 => Self::Rdp,
+            5432 => Self::Postgresql,
+            9418 => Self::Git,
+            _ => Self::Unknown(value),
         }
     }
 }
@@ -247,10 +310,7 @@ pub fn parse_and_display_packet(packet_num: usize, packet: &pcap::Packet) {
     println!("🔗 Ethernet:");
     println!("   Destination MAC: {}", format_mac(&eth_header.dst_mac));
     println!("   Source MAC:      {}", format_mac(&eth_header.src_mac));
-    println!(
-        "   EtherType:       ({:?})",
-        eth_header.ether_type.clone()
-    );
+    println!("   EtherType:       ({:?})", eth_header.ether_type.clone());
 
     // Check if it's an IP packet
     if eth_header.ether_type == EtherType::Ipv4 && packet.data.len() >= 34 {
@@ -317,7 +377,7 @@ fn parse_tcp_header(data: &[u8], src_ip: &str, dst_ip: &str) {
     );
     println!("   Window Size:     {}", window_size);
     println!(
-        "   Service:         {:?}",
+        "   Service:         {}",
         identify_service(src_port, dst_port)
     );
 }
