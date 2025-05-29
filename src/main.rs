@@ -1,3 +1,5 @@
+mod filteration;
+mod types;
 mod utils;
 use std::io::{Result, Write};
 
