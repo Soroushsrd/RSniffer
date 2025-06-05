@@ -119,6 +119,18 @@ impl From<u8> for Protocol {
         }
     }
 }
+impl fmt::Display for Protocol {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Protocol::Icmp => write!(f, "ICMP"),
+            Protocol::Tcp => write!(f, "TCP"),
+            Protocol::Udp => write!(f, "UDP"),
+            Protocol::Igmp => write!(f, "IGMP"),
+            Protocol::Esp => write!(f, "ESP"),
+            Protocol::Other => write!(f, "Other Protocols"),
+        }
+    }
+}
 
 // IPv4 Address:
 //
