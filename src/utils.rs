@@ -1,6 +1,11 @@
-use crate::types::{EtherType, EthernetHeader, KnownPorts, Protocol};
+use std::net::{IpAddr, Ipv4Addr};
 
-pub fn parse_and_display_packet(packet_num: usize, packet: &pcap::Packet) {
+use crate::{
+    filteration::Filter,
+    types::{EtherType, EthernetHeader, IPInfo, KnownPorts, Protocol, TransportInfo},
+};
+
+pub fn parse_and_display_packet(filter: Filter, packet_num: usize, packet: &pcap::Packet) {
     println!("\n=== Packet {} ===", packet_num);
     // println!("Timestamp: {:?}", packet.header.ts);
     println!("Total Length: {} bytes", packet.data.len());
@@ -11,99 +16,173 @@ pub fn parse_and_display_packet(packet_num: usize, packet: &pcap::Packet) {
     }
 
     // Parse Ethernet header (14 bytes)
-    let eth_header = parse_ehternet_header(&packet.data[0..14]).unwrap();
-    println!("🔗 Ethernet:");
-    println!("   Destination MAC: {}", format_mac(&eth_header.dst_mac));
-    println!("   Source MAC:      {}", format_mac(&eth_header.src_mac));
-    println!("   EtherType:       ({:?})", eth_header.ether_type.clone());
+    let eth_header = match parse_ehternet_header(&packet.data[0..14]) {
+        Ok(header) => header,
+        Err(e) => {
+            eprintln!("Ethernet parsing error: {}", e);
+            return;
+        }
+    };
 
-    // Check if it's an IP packet
     if eth_header.ether_type == EtherType::Ipv4 && packet.data.len() >= 34 {
-        parse_ip_packet(&packet.data[14..]);
-    }
-}
-
-fn parse_ip_packet(data: &[u8]) {
-    if data.len() < 20 {
-        eprintln!("Packet too short as an IP header");
-        return;
-    }
-
-    let version = (data[0] >> 4) & 0x0F;
-    let header_length = data[0] & 0x0F;
-    let protocol = data[9];
-    let src_ip = format!("{}.{}.{}.{}", data[12], data[13], data[14], data[15]);
-    let dst_ip = format!("{}.{}.{}.{}", data[16], data[17], data[18], data[19]);
-    let total_length = u16::from_be_bytes([data[2], data[3]]);
-
-    println!("🌐 IPv{} Header:", version);
-    println!("   Header Length:   {} bytes", header_length);
-    println!("   Total Length:    {} bytes", total_length);
-    println!(
-        "   Protocol:        {} ({:?})",
-        protocol,
-        Protocol::from(protocol)
-    );
-    println!("   Source IP:       {}", src_ip);
-    println!("   Destination IP:  {}", dst_ip);
-
-    if data.len() > header_length as usize {
-        let transport_data = &data[header_length as usize..];
-        match protocol {
-            6 => parse_tcp_header(transport_data, &src_ip, &dst_ip),
-            17 => parse_udp_header(transport_data, &src_ip, &dst_ip),
-            1 => println!("ICMP Packet"),
-            _ => println!("Other Protocols: {}", protocol),
+        if let Err(e) = process_ip_packet(&filter, &packet.data[14..], eth_header) {
+            eprintln!("IP processing error: {}", e);
         }
     }
 }
 
-fn parse_tcp_header(data: &[u8], src_ip: &str, dst_ip: &str) {
-    if data.len() < 20 {
-        eprintln!("TCP header is too short!");
-        return;
+fn process_ip_packet(
+    filter: &Filter,
+    data: &[u8],
+    eth_header: EthernetHeader,
+) -> Result<(), String> {
+    let ip_info = parse_ip_header(data)?;
+
+    if !filter.matches_ip_level(&ip_info) {
+        return Ok(());
     }
 
-    let src_port = u16::from_be_bytes([data[0], data[1]]);
-    let dst_port = u16::from_be_bytes([data[2], data[3]]);
-    let seq_num = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
-    let ack_num = u32::from_be_bytes([data[8], data[9], data[10], data[11]]);
-    let flags = data[13];
-    let window_size = u16::from_be_bytes([data[14], data[15]]);
+    let transport_info = parse_transport_header(data, &ip_info)?;
 
-    println!("🔀 TCP Header:");
-    println!("   {}:{} → {}:{}", src_ip, src_port, dst_ip, dst_port);
-    println!("   Sequence:        {}", seq_num);
-    println!("   Acknowledgment:  {}", ack_num);
-    println!(
-        "   Flags:           {} ({})",
-        flags,
-        format_tcp_flags(flags)
-    );
-    println!("   Window Size:     {}", window_size);
-    println!(
-        "   Service:         {}",
-        identify_service(src_port, dst_port)
-    );
+    if !filter.matches_transport_level(&transport_info) {
+        return Ok(());
+    }
+
+    display_packet(&eth_header, &ip_info, &transport_info);
+    Ok(())
 }
 
-fn parse_udp_header(data: &[u8], src_ip: &str, dst_ip: &str) {
-    if data.len() < 8 {
-        eprint!("UDP header is too short");
-        return;
+fn display_packet(eth_header: &EthernetHeader, ip_info: &IPInfo, transport_info: &TransportInfo) {
+    println!("🔗 Ethernet:");
+    println!("   Destination MAC: {}", format_mac(&eth_header.dst_mac));
+    println!("   Source MAC:      {}", format_mac(&eth_header.src_mac));
+    println!("   EtherType:       ({:?})", eth_header.ether_type.clone());
+    println!("🌐 IPv{} Header:", ip_info.version);
+    println!("   Header Length:   {} bytes", ip_info.header_length);
+    println!("   Total Length:    {} bytes", &ip_info.total_length);
+    println!("   Protocol:        {} ", &ip_info.protocol,);
+    println!("   Source IP:       {}", ip_info.src_ip);
+    println!("   Destination IP:  {}", ip_info.dst_ip);
+
+    match transport_info {
+        TransportInfo::Tcp {
+            src_port,
+            dst_port,
+            seq_num,
+            ack_num,
+            header_length,
+            flags,
+            window_size,
+            ..
+        } => {
+            println!("🔀 TCP Header:");
+            println!("  TCP Header Length: {}", header_length);
+            println!(
+                "   {}:{} → {}:{}",
+                ip_info.src_ip, src_port, ip_info.dst_ip, dst_port
+            );
+            println!("   Sequence:        {}", seq_num);
+            println!("   Acknowledgment:  {}", ack_num);
+            println!(
+                "   Flags:           {} ({})",
+                flags,
+                format_tcp_flags(*flags)
+            );
+            println!("   Window Size:     {}", window_size);
+            println!(
+                "   Service:         {}",
+                identify_service(*src_port, *dst_port)
+            );
+        }
+        TransportInfo::Udp {
+            src_port,
+            dst_port,
+            length,
+        } => {
+            println!("📡 UDP Header:");
+            println!(
+                "   {}:{} → {}:{}",
+                ip_info.src_ip, src_port, ip_info.src_ip, dst_port
+            );
+            println!("   Length:          {} bytes", length);
+            println!(
+                "   Service:         {:?}",
+                identify_service(*src_port, *dst_port)
+            );
+        }
+        TransportInfo::Icmp => println!("ICP Protocol"),
+        TransportInfo::Other => println!("Other Protocols"),
+    }
+}
+fn parse_transport_header(data: &[u8], ip_info: &IPInfo) -> Result<TransportInfo, String> {
+    let transport_data = &data[ip_info.header_length as usize..];
+    match ip_info.protocol {
+        Protocol::Tcp => {
+            if transport_data.len() < 20 {
+                return Err("Insufficient data for TCP header".to_string());
+            }
+            let header_length = (transport_data[12] >> 4) * 4;
+            let options = if header_length > 20 && transport_data.len() > header_length as usize {
+                Some(transport_data[20..header_length as usize].to_vec())
+            } else {
+                None
+            };
+
+            Ok(TransportInfo::Tcp {
+                src_port: u16::from_be_bytes([transport_data[0], transport_data[1]]),
+                dst_port: u16::from_be_bytes([transport_data[2], transport_data[3]]),
+                seq_num: u32::from_be_bytes([
+                    transport_data[4],
+                    transport_data[5],
+                    transport_data[6],
+                    transport_data[7],
+                ]),
+                ack_num: u32::from_be_bytes([
+                    transport_data[8],
+                    transport_data[9],
+                    transport_data[10],
+                    transport_data[11],
+                ]),
+                header_length,
+                flags: transport_data[13],
+                window_size: u16::from_be_bytes([transport_data[14], transport_data[15]]),
+                checksum: u16::from_be_bytes([transport_data[16], transport_data[17]]),
+                urgent_pointer: u16::from_be_bytes([transport_data[18], transport_data[19]]),
+                options,
+            })
+        }
+        Protocol::Udp => {
+            if transport_data.len() < 8 {
+                return Err("Insufficient data for UDP header".to_string());
+            }
+            Ok(TransportInfo::Udp {
+                src_port: u16::from_be_bytes([transport_data[0], transport_data[1]]),
+                dst_port: u16::from_be_bytes([transport_data[2], transport_data[3]]),
+                length: u16::from_be_bytes([transport_data[4], transport_data[5]]),
+            })
+        }
+        Protocol::Icmp => Ok(TransportInfo::Icmp),
+        _ => Ok(TransportInfo::Other),
+    }
+}
+
+fn parse_ip_header(data: &[u8]) -> Result<IPInfo, String> {
+    if data.len() < 20 {
+        return Err("Insufficient data for IP header".to_string());
     }
 
-    let src_port = u16::from_be_bytes([data[0], data[1]]);
-    let dst_port = u16::from_be_bytes([data[2], data[3]]);
-    let length = u16::from_be_bytes([data[4], data[5]]);
-
-    println!("📡 UDP Header:");
-    println!("   {}:{} → {}:{}", src_ip, src_port, dst_ip, dst_port);
-    println!("   Length:          {} bytes", length);
-    println!(
-        "   Service:         {:?}",
-        identify_service(src_port, dst_port)
-    );
+    let header_length = (data[0] & 0x0F) * 4;
+    if data.len() < header_length as usize {
+        return Err("Truncated IP header".to_string());
+    }
+    Ok(IPInfo {
+        version: (data[0] >> 4) & 0x0F,
+        header_length,
+        total_length: u16::from_be_bytes([data[2], data[3]]),
+        protocol: Protocol::from(data[9]),
+        src_ip: IpAddr::V4(Ipv4Addr::new(data[12], data[13], data[14], data[15])),
+        dst_ip: IpAddr::V4(Ipv4Addr::new(data[16], data[17], data[18], data[19])),
+    })
 }
 
 fn format_mac(mac: &[u8; 6]) -> String {

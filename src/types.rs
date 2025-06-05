@@ -38,7 +38,7 @@
 // Payload (46-1500 bytes): The actual data (IP packet, ARP, etc.)
 // FCS (4 bytes): Frame Check Sequence (error detection) - usually stripped by NIC
 
-use std::fmt;
+use std::{fmt, net::IpAddr};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum EtherType {
@@ -116,6 +116,21 @@ impl From<u8> for Protocol {
             2 => Self::Igmp,
             50 => Self::Esp,
             _ => Self::Other,
+        }
+    }
+}
+
+impl TryFrom<String> for Protocol {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.to_lowercase().as_str() {
+            "tcp" => Ok(Protocol::Tcp),
+            "udp" => Ok(Protocol::Udp),
+            "icmp" => Ok(Protocol::Icmp),
+            "igmp" => Ok(Protocol::Igmp),
+            "esp" => Ok(Protocol::Esp),
+            _ => Err(format!("Unknown protocol: {}", value)),
         }
     }
 }
@@ -305,4 +320,38 @@ pub struct EthernetHeader {
     pub dst_mac: [u8; 6],
     pub src_mac: [u8; 6],
     pub ether_type: EtherType,
+}
+
+#[derive(Debug)]
+pub struct IPInfo {
+    pub version: u8,
+    pub header_length: u8,
+    pub total_length: u16,
+    pub protocol: Protocol,
+    pub src_ip: IpAddr,
+    pub dst_ip: IpAddr,
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+pub enum TransportInfo {
+    Tcp {
+        src_port: u16,
+        dst_port: u16,
+        seq_num: u32,
+        ack_num: u32,
+        header_length: u8,
+        flags: u8,
+        window_size: u16,
+        checksum: u16,
+        urgent_pointer: u16,
+        options: Option<Vec<u8>>,
+    },
+    Udp {
+        src_port: u16,
+        dst_port: u16,
+        length: u16,
+    },
+    Icmp,
+    Other,
 }

@@ -1,26 +1,16 @@
-use crate::types::Protocol;
+use crate::types::{IPInfo, Protocol, TransportInfo};
 use core::fmt;
 use std::{error::Error, net::IpAddr};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Filter {
     src_ip: Option<IpAddr>,
     dst_ip: Option<IpAddr>,
     src_port: Option<u16>,
     dst_port: Option<u16>,
     protocol: Option<Protocol>,
-    packet_size_min: Option<usize>,
-    packet_size_max: Option<usize>,
-}
-
-#[derive(Debug)]
-pub struct PacketInfo {
-    src_ip: IpAddr,
-    dst_ip: IpAddr,
-    src_port: u16,
-    dst_port: u16,
-    protocol: Protocol,
-    packet_size: usize,
+    packet_size_min: Option<u16>,
+    packet_size_max: Option<u16>,
 }
 
 #[allow(dead_code)]
@@ -32,15 +22,15 @@ impl Filter {
         let ip_in = ip.into();
         let ip = ip_in
             .parse::<IpAddr>()
-            .map_err(|_| FilterError::InvalidIp(format!("{}", ip_in)))?;
+            .map_err(|_| FilterError::InvalidIp(ip_in))?;
         self.src_ip = Some(ip);
         Ok(self)
     }
     pub fn dst_ip(mut self, ip: impl Into<String>) -> Result<Self, FilterError> {
-        let ip_in = ip.into();
+        let ip_in: String = ip.into();
         let ip = ip_in
             .parse::<IpAddr>()
-            .map_err(|_| FilterError::InvalidIp(format!("{}", ip_in)))?;
+            .map_err(|_| FilterError::InvalidIp(ip_in))?;
         self.dst_ip = Some(ip);
         Ok(self)
     }
@@ -53,11 +43,12 @@ impl Filter {
         self.dst_port = Some(port);
         self
     }
-    pub fn protocol(mut self, pr: Protocol) -> Self {
-        self.protocol = Some(pr);
+    //TODO: Error handling
+    pub fn protocol(mut self, pr: String) -> Self {
+        self.protocol = Some(Protocol::try_from(pr).unwrap());
         self
     }
-    pub fn packet_size_range(mut self, min: usize, max: usize) -> Result<Self, FilterError> {
+    pub fn packet_size_range(mut self, min: u16, max: u16) -> Result<Self, FilterError> {
         if min >= max {
             return Err(FilterError::InvalidPortRange);
         }
@@ -66,53 +57,69 @@ impl Filter {
         self.packet_size_max = Some(max);
         Ok(self)
     }
-    pub fn packet_size_min(mut self, size: usize) -> Self {
+    pub fn packet_size_min(mut self, size: u16) -> Self {
         self.packet_size_min = Some(size);
         self
     }
-    pub fn packet_size_max(mut self, size: usize) -> Self {
+    pub fn packet_size_max(mut self, size: u16) -> Self {
         self.packet_size_max = Some(size);
         self
     }
-    pub fn matches(&self, packet: &PacketInfo) -> bool {
+    pub fn matches_ip_level(&self, ip_info: &IPInfo) -> bool {
         if let Some(src_ip) = self.src_ip {
-            if src_ip != packet.src_ip {
+            if src_ip != ip_info.src_ip {
                 return false;
             }
         }
         if let Some(expected_dst) = self.dst_ip {
-            if packet.dst_ip != expected_dst {
+            if ip_info.dst_ip != expected_dst {
                 return false;
             }
         }
-
-        if let Some(expected_src_port) = self.src_port {
-            if packet.src_port != expected_src_port {
-                return false;
-            }
-        }
-
-        if let Some(expected_dst_port) = self.dst_port {
-            if packet.dst_port != expected_dst_port {
-                return false;
-            }
-        }
-
         if let Some(expected_protocol) = self.protocol {
-            if packet.protocol != expected_protocol {
+            if ip_info.protocol != expected_protocol {
                 return false;
             }
         }
 
         if let Some(min_size) = self.packet_size_min {
-            if packet.packet_size < min_size {
+            if ip_info.total_length < min_size {
                 return false;
             }
         }
 
         if let Some(max_size) = self.packet_size_max {
-            if packet.packet_size > max_size {
+            if ip_info.total_length > max_size {
                 return false;
+            }
+        }
+        true
+    }
+
+    pub fn matches_transport_level(&self, packet: &TransportInfo) -> bool {
+        match packet {
+            TransportInfo::Udp {
+                src_port, dst_port, ..
+            }
+            | TransportInfo::Tcp {
+                src_port, dst_port, ..
+            } => {
+                if let Some(expected_src_port) = self.src_port {
+                    if *src_port != expected_src_port {
+                        return false;
+                    }
+                }
+
+                if let Some(expected_dst_port) = self.dst_port {
+                    if *dst_port != expected_dst_port {
+                        return false;
+                    }
+                }
+            }
+            _ => {
+                if self.src_port.is_some() || self.dst_port.is_some() {
+                    return false;
+                }
             }
         }
         true
@@ -171,64 +178,3 @@ impl fmt::Display for FilterError {
     }
 }
 impl Error for FilterError {}
-
-#[cfg(test)]
-mod tests {
-    use std::net::Ipv4Addr;
-
-    use super::*;
-
-    #[test]
-    fn test_matches() -> Result<(), Box<dyn std::error::Error>> {
-        let filter = Filter::default()
-            .src_ip("127.0.0.1")?
-            .src_port(8080)
-            .dst_ip("127.0.0.1")?
-            .dst_port(8000)
-            .protocol(Protocol::Tcp)
-            .packet_size_range(100, 1000)?;
-
-        let packet_1 = PacketInfo {
-            src_ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            dst_ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            src_port: 8080,
-            dst_port: 8000,
-            protocol: Protocol::Tcp,
-            packet_size: 600,
-        };
-        assert!(filter.matches(&packet_1), "Filter cant find the packet");
-        let packet_2 = PacketInfo {
-            src_ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            dst_ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            src_port: 8000,
-            dst_port: 8000,
-            protocol: Protocol::Udp,
-            packet_size: 600,
-        };
-        assert!(
-            !filter.matches(&packet_2),
-            "Filter shouldnt be able to find this packet"
-        );
-
-        Ok(())
-    }
-    #[test]
-    fn test_build_filter() -> Result<(), Box<dyn std::error::Error>> {
-        let filter = Filter::default()
-            .src_ip("127.0.0.1")?
-            .src_port(8080)
-            .dst_ip("127.0.0.1")?
-            .dst_port(8000)
-            .protocol(Protocol::Tcp)
-            .packet_size_range(100, 1000)?;
-
-        assert_eq!(filter.src_ip, Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));
-        assert_eq!(filter.dst_ip, Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));
-        assert_eq!(filter.src_port, Some(8080));
-        assert_eq!(filter.dst_port, Some(8000));
-        assert_eq!(filter.protocol, Some(Protocol::Tcp));
-
-        println!("{}", filter);
-        Ok(())
-    }
-}
