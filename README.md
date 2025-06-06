@@ -10,6 +10,7 @@ A command-line network packet analyzer written in Rust that captures and display
 - 🎯 **MAC address parsing** with manufacturer identification
 - 🔗 **Port service identification** for common protocols
 - 📋 **Clean, structured output** with emojis for easy readability
+- **Filter options to help filter unwanted packets
 
 ## Prerequisites
 
@@ -38,6 +39,24 @@ cargo build
 
 # Run with sudo
 sudo ./target/debug/RSniffer
+```
+
+### Filteration Options
+
+```bash
+Usage: Rsniffer [OPTIONS]
+
+Options:
+  -i, --src-ip <SRC_IP>                      Source IP
+  -d, --dst-ip <DST_IP>                      Destination IP
+  -s, --port-source <PORT_SOURCE>            Source Port
+  -p, --port-destination <PORT_DESTINATION>  Destination Port
+  -r, --protocol <PROTOCOL>                  Protocol Used for data transportation
+  -m, --min-pack-size <MIN_PACK_SIZE>        Minimum Packet Size
+  -x, --max-pack-size <MAX_PACK_SIZE>        Maximum Packet Size
+  -h, --help                                 Print help
+  -V, --version                              Print version
+
 ```
 
 ### Alternative: Set network capabilities (Linux only)
