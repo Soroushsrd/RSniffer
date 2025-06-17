@@ -5,7 +5,7 @@ use crate::{
     types::{EtherType, EthernetHeader, IPInfo, KnownPorts, Protocol, TransportInfo},
 };
 
-pub fn parse_and_display_packet(filter: Filter, packet_num: usize, packet: &pcap::Packet) {
+pub fn parse_and_display_packet(filter: &Filter, packet_num: usize, packet: &pcap::Packet) {
     println!("\n=== Packet {} ===", packet_num);
     // println!("Timestamp: {:?}", packet.header.ts);
     println!("Total Length: {} bytes", packet.data.len());

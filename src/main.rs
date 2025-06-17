@@ -63,7 +63,7 @@ fn main() -> Result<()> {
         match cap.next_packet() {
             Ok(packet) => {
                 packet_count += 1;
-                parse_and_display_packet(filter.clone(), packet_count, &packet);
+                parse_and_display_packet(&filter, packet_count, &packet);
             }
             Err(pcap::Error::TimeoutExpired) => continue,
             Err(e) => {
@@ -72,9 +72,6 @@ fn main() -> Result<()> {
             }
         }
     }
-    // while let Ok(packet) = cap.next_packet() {
-    //     println!("received packet: {:#?}", packet.header);
-    // }
     Ok(())
 }
 
