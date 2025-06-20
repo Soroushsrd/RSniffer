@@ -1,6 +1,39 @@
 use crate::types::{IPInfo, Protocol, TransportInfo};
+use clap::Parser;
 use core::fmt;
 use std::{error::Error, net::IpAddr};
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+pub struct FilterArgs {
+    /// Source IP
+    #[arg(short = 'i', long)]
+    src_ip: Option<String>,
+
+    /// Destination IP
+    #[arg(short = 'd', long)]
+    dst_ip: Option<String>,
+
+    /// Source Port
+    #[arg(short = 's', long)]
+    port_source: Option<u16>,
+
+    /// Destination Port
+    #[arg(short = 'p', long)]
+    port_destination: Option<u16>,
+
+    /// Protocol Used for data transportation
+    #[arg(short = 'r', long)]
+    protocol: Option<String>,
+
+    /// Minimum Packet Size
+    #[arg(short, long)]
+    min_pack_size: Option<u16>,
+
+    /// Maximum Packet Size
+    #[arg(short = 'x', long)]
+    max_pack_size: Option<u16>,
+}
 
 #[derive(Debug, Default, Clone)]
 pub struct Filter {
@@ -43,7 +76,6 @@ impl Filter {
         self.dst_port = Some(port);
         self
     }
-    //TODO: Error handling
     pub fn protocol(mut self, pr: String) -> Self {
         self.protocol = Some(Protocol::try_from(pr).unwrap());
         self
@@ -126,6 +158,42 @@ impl Filter {
     }
 }
 
+impl TryFrom<FilterArgs> for Filter {
+    type Error = FilterError;
+    fn try_from(args: FilterArgs) -> std::result::Result<Self, Self::Error> {
+        let mut filter = Filter::new();
+
+        if let Some(src_ip) = args.src_ip {
+            filter = filter.src_ip(src_ip)?;
+        }
+
+        if let Some(dst_ip) = args.dst_ip {
+            filter = filter.dst_ip(dst_ip)?;
+        }
+
+        if let Some(src_port) = args.port_source {
+            filter = filter.src_port(src_port);
+        }
+
+        if let Some(dst_port) = args.port_destination {
+            filter = filter.dst_port(dst_port);
+        }
+
+        if let Some(protocol_str) = args.protocol {
+            filter = filter.protocol(protocol_str);
+        }
+
+        if let Some(min_size) = args.min_pack_size {
+            filter = filter.packet_size_min(min_size);
+        }
+
+        if let Some(max_size) = args.max_pack_size {
+            filter = filter.packet_size_max(max_size);
+        }
+        return Ok(filter);
+    }
+}
+
 impl std::fmt::Display for Filter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut filter_str = String::with_capacity(70);
@@ -168,12 +236,21 @@ impl std::fmt::Display for Filter {
 pub enum FilterError {
     InvalidIp(String),
     InvalidPortRange,
+    IoError(String),
 }
+
+impl From<std::io::Error> for FilterError {
+    fn from(value: std::io::Error) -> Self {
+        return Self::IoError(value.to_string());
+    }
+}
+
 impl fmt::Display for FilterError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             FilterError::InvalidIp(text) => write!(f, "Invalid IP: {}", text),
             FilterError::InvalidPortRange => write!(f, "Invalid Port Range"),
+            FilterError::IoError(text) => write!(f, "Io Error: {}", text),
         }
     }
 }
