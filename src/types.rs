@@ -316,13 +316,14 @@ impl From<u16> for KnownPorts {
 // 49152-65535: Dynamic/ephemeral ports (temporary)
 //
 
+#[derive(Clone)]
 pub struct EthernetHeader {
     pub dst_mac: [u8; 6],
     pub src_mac: [u8; 6],
     pub ether_type: EtherType,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IPInfo {
     pub version: u8,
     pub header_length: u8,
@@ -333,7 +334,7 @@ pub struct IPInfo {
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TransportInfo {
     Tcp {
         src_port: u16,
