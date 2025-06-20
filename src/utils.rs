@@ -1,15 +1,22 @@
-use std::net::{IpAddr, Ipv4Addr};
-
 use crate::{
     filteration::Filter,
     types::{EtherType, EthernetHeader, IPInfo, KnownPorts, Protocol, TransportInfo},
 };
+use std::{
+    fs,
+    io::{Error, Write},
+    net::{IpAddr, Ipv4Addr},
+    path::PathBuf,
+};
+
+pub fn write_to_file(path: &str, content: &str) -> Result<(), Error> {
+    let path = PathBuf::from(format!("/home/rusty/temp/{}", path));
+
+    let mut file = fs::File::options().append(true).create(true).open(path)?;
+    file.write_all(content.as_bytes())
+}
 
 pub fn parse_and_display_packet(filter: &Filter, packet_num: usize, packet: &pcap::Packet) {
-    println!("\n=== Packet {} ===", packet_num);
-    // println!("Timestamp: {:?}", packet.header.ts);
-    println!("Total Length: {} bytes", packet.data.len());
-
     if packet.data.len() < 14 {
         println!("Packet too short for Ethernet header");
         return;
@@ -25,7 +32,7 @@ pub fn parse_and_display_packet(filter: &Filter, packet_num: usize, packet: &pca
     };
 
     if eth_header.ether_type == EtherType::Ipv4 && packet.data.len() >= 34 {
-        if let Err(e) = process_ip_packet(&filter, &packet.data[14..], eth_header) {
+        if let Err(e) = process_ip_packet(&filter, &packet.data[14..], eth_header, packet_num) {
             eprintln!("IP processing error: {}", e);
         }
     }
@@ -35,6 +42,7 @@ fn process_ip_packet(
     filter: &Filter,
     data: &[u8],
     eth_header: EthernetHeader,
+    packet_num: usize,
 ) -> Result<(), String> {
     let ip_info = parse_ip_header(data)?;
 
@@ -47,12 +55,108 @@ fn process_ip_packet(
     if !filter.matches_transport_level(&transport_info) {
         return Ok(());
     }
+    //TODO: fix this
+    // println!("\n=== Packet {} ===", packet_num);
+    // println!("Timestamp: {:?}", packet.header.ts);
+    // println!("Total Length: {} bytes", packet.data.len());
 
-    display_packet(&eth_header, &ip_info, &transport_info);
+    display_packet(&eth_header, &ip_info, &transport_info, "test.txt");
     Ok(())
 }
 
-fn display_packet(eth_header: &EthernetHeader, ip_info: &IPInfo, transport_info: &TransportInfo) {
+fn write_packet(
+    eth_header: &EthernetHeader,
+    ip_info: &IPInfo,
+    transport_info: &TransportInfo,
+    path: &str,
+) {
+    let mut buff = String::with_capacity(400);
+    buff.push_str("🔗 Ethernet:\n");
+    buff.push_str(&format!(
+        "   Destination MAC: {}\n",
+        format_mac(&eth_header.dst_mac)
+    ));
+    buff.push_str(&format!(
+        "   Source MAC:      {}\n",
+        format_mac(&eth_header.src_mac)
+    ));
+    buff.push_str(&format!(
+        "   EtherType:       ({:?})\n",
+        eth_header.ether_type.clone()
+    ));
+    buff.push_str(&format!("🌐 IPv{} Header:\n", ip_info.version));
+    buff.push_str(&format!(
+        "   Header Length:   {} bytes\n",
+        ip_info.header_length
+    ));
+    buff.push_str(&format!(
+        "   Total Length:    {} bytes\n",
+        &ip_info.total_length
+    ));
+    buff.push_str(&format!("   Protocol:        {} \n", &ip_info.protocol,));
+    buff.push_str(&format!("   Source IP:       {}\n", ip_info.src_ip));
+    buff.push_str(&format!("   Destination IP:  {}\n", ip_info.dst_ip));
+
+    match transport_info {
+        TransportInfo::Tcp {
+            src_port,
+            dst_port,
+            seq_num,
+            ack_num,
+            header_length,
+            flags,
+            window_size,
+            ..
+        } => {
+            buff.push_str("🔀 TCP Header:\n");
+            buff.push_str(&format!("  TCP Header Length: {}\n", header_length));
+            buff.push_str(&format!(
+                "   {}:{} → {}:{}\n",
+                ip_info.src_ip, src_port, ip_info.dst_ip, dst_port
+            ));
+            buff.push_str(&format!("   Sequence:        {}\n", seq_num));
+            buff.push_str(&format!("   Acknowledgment:  {}\n", ack_num));
+            buff.push_str(&format!(
+                "   Flags:           {} ({})\n",
+                flags,
+                format_tcp_flags(*flags)
+            ));
+            buff.push_str(&format!("   Window Size:     {}\n", window_size));
+            buff.push_str(&format!(
+                "   Service:         {}\n",
+                identify_service(*src_port, *dst_port)
+            ));
+        }
+        TransportInfo::Udp {
+            src_port,
+            dst_port,
+            length,
+        } => {
+            buff.push_str("📡 UDP Header:\n");
+
+            buff.push_str(&format!(
+                "   {}:{} → {}:{}\n",
+                ip_info.src_ip, src_port, ip_info.src_ip, dst_port
+            ));
+            buff.push_str(&format!("   Length:          {} bytes\n", length));
+            buff.push_str(&format!(
+                "   Service:         {:?}\n",
+                identify_service(*src_port, *dst_port)
+            ));
+        }
+        TransportInfo::Icmp => buff.push_str("ICP Protocol\n"),
+        TransportInfo::Other => buff.push_str("Other Protocols\n"),
+    }
+    write_to_file(path, &buff).unwrap()
+}
+
+fn display_packet(
+    eth_header: &EthernetHeader,
+    ip_info: &IPInfo,
+    transport_info: &TransportInfo,
+    path: &str,
+) {
+    write_packet(eth_header, ip_info, transport_info, path);
     println!("🔗 Ethernet:");
     println!("   Destination MAC: {}", format_mac(&eth_header.dst_mac));
     println!("   Source MAC:      {}", format_mac(&eth_header.src_mac));
