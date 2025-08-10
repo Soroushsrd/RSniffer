@@ -1,0 +1,19 @@
+[package]
+name = "rsniffer-ebpf"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+rsniffer-common = { path = "../rsniffer-common" }
+
+aya-ebpf = { workspace = true }
+aya-log-ebpf = { workspace = true }
+
+network-types = "0.0.8"
+
+[build-dependencies]
+which = { workspace = true }
+
+[[bin]]
+name = "rsniffer"
+path = "src/main.rs"
